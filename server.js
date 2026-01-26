@@ -13,6 +13,7 @@ const vehicleRoutes = require('./routes/vehicleRoutes');
 const driverRoutes = require('./routes/driverRoute');
 const assignmentRoutes = require('./routes/assignmentRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
+const categoryRoutes = require('./routes/categoryRoutes');
 
 const app = express();
 
@@ -42,6 +43,7 @@ app.use('/vehicle', vehicleRoutes);
 app.use('/authentication', authenticationRoutes);
 app.use('/assignment', assignmentRoutes);
 app.use('/notification', notificationRoutes);
+app.use('/category', categoryRoutes);
 
 const PORT = process.env.PORT || 3000;
 
