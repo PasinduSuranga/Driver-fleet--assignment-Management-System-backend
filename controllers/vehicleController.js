@@ -1,0 +1,30 @@
+const db = require('../config/db');
+
+exports.getVehicleCount = (req, res) => {
+    // This query counts total vehicles, and sums up based on the 'ownership' column.
+    // Replace 'ownership', 'Own', and 'Rented' with the exact column name and values in your database.
+    const query = `
+        SELECT 
+            COUNT(*) as totalVehicles,
+            SUM(CASE WHEN vehicle_type = 'OwnFleet' THEN 1 ELSE 0 END) as ownFleetVehicles,
+            SUM(CASE WHEN vehicle_type = 'OutSource' THEN 1 ELSE 0 END) as outSourceVehicles
+        FROM vehicle
+    `;
+
+    db.query(query, (err, results) => {
+        if (err) {
+            console.error('Error fetching vehicle counts:', err);
+            return res.status(500).json({ error: 'Database error fetching counts' });
+        }
+        
+        // results[0] will contain the counts
+        const data = results[0];
+        
+        // Ensure values are numbers (MySQL SUM can return strings sometimes)
+        res.status(200).json({
+            totalVehicles: data.totalVehicles || 0,
+            ownFleetVehicles: Number(data.ownFleetVehicles) || 0,
+            outSourceVehicles: Number(data.outSourceVehicles) || 0
+        });
+    });
+};
