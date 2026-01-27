@@ -14,6 +14,7 @@ const driverRoutes = require('./routes/driverRoute');
 const assignmentRoutes = require('./routes/assignmentRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const categoryRoutes = require('./routes/categoryRoutes');
+const ownerRoutes = require('./routes/ownerRoutes');
 
 const app = express();
 
@@ -44,6 +45,7 @@ app.use('/authentication', authenticationRoutes);
 app.use('/assignment', assignmentRoutes);
 app.use('/notification', notificationRoutes);
 app.use('/category', categoryRoutes);
+app.use('/owner', ownerRoutes);
 
 const PORT = process.env.PORT || 3000;
 
