@@ -135,7 +135,11 @@ exports.login = (req, res) => {
         }
         const user = results[0];
 
-        if (!user.is_approved) {
+        if (user.is_approved === 3) {
+            return res.status(401).json({ message: 'Your account is blacklisted.' });
+        }
+
+        if (user.is_approved === 0) {
             return res.status(401).json({ message: 'Your account is not approved yet.' });
         }
 
@@ -151,7 +155,7 @@ exports.login = (req, res) => {
             const token = jwt.sign(
                 { userId: user.user_id, role: user.role },
                 process.env.JWT_SECRET,
-                { expiresIn: '1h' }
+                { expiresIn: '9h' }
             );
 
             const expiryDate = new Date();
