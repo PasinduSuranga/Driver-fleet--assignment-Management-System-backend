@@ -21,4 +21,6 @@ router.post('/add', uploadFields, vehicleController.addVehicle);
 
 router.post('/checkRegistration', vehicleController.checkRegistration);
 
+router.get('/vehicleDetails', vehicleController.getVehicleDetails);
+
 module.exports = router;

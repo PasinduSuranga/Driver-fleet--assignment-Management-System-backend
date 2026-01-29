@@ -171,3 +171,55 @@ exports.addVehicle = async (req, res) => {
         res.status(500).json({ message: "Server Error processing request" });
     }
 };
+
+
+exports.getVehicleDetails = async (req, res) => {
+  const { vehicleNumber } = req.query;
+
+  if (!vehicleNumber) {
+    return res.status(400).json({ error: 'Vehicle number is required' });
+  }
+
+  // UPDATED QUERY based on your screenshots:
+  // 1. Joins 'vehicle' with 'owner', 'vehicle_category', and 'vehicle_documents'.
+  // 2. Uses the exact column spelling 'documnet_id' found in your vehicle_documents table.
+  const query = `
+    SELECT 
+      v.vehicle_number, 
+      v.vehicle_photo, 
+      v.vehicle_type, 
+      v.availability,
+      
+      o.name AS owner_name, 
+      o.contact AS contact_no, 
+      
+      vc.category_name, 
+      
+      vd.book_copy, 
+      vd.license AS license_copy, 
+      vd.license_expiry_date AS license_expiry, 
+      vd.insurance AS insurance_copy, 
+      vd.insurance_expiry_date AS insurance_expiry 
+    FROM vehicle v 
+    LEFT JOIN owner o ON v.owner_id = o.owner_id 
+    LEFT JOIN vehicle_category vc ON v.category_id = vc.category_id 
+    LEFT JOIN vehicle_documents vd ON v.document_id = vd.documnet_id 
+    WHERE v.vehicle_number = ?
+  `;
+
+  try {
+    // We use .promise() here because you are using mysql2 with createConnection.
+    // This wrapper allows us to use 'await' without changing your db.js file.
+    const [results] = await db.promise().query(query, [vehicleNumber]);
+
+    if (results.length === 0) {
+      return res.status(404).json({ error: 'Vehicle not found' });
+    }
+
+    // Return the single vehicle object
+    res.status(200).json(results[0]);
+  } catch (error) {
+    console.error('Error fetching vehicle details:', error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+};
