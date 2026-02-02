@@ -223,3 +223,83 @@ exports.getVehicleDetails = async (req, res) => {
     res.status(500).json({ error: 'Internal Server Error' });
   }
 };
+
+
+exports.updateVehicle = async (req, res) => {
+    const { vehicleNumber, vehicleType, ownerId, ownerContact, licenseExpiry, insuranceExpiry } = req.body;
+    const files = req.files || {};
+
+    if (!vehicleNumber) {
+        return res.status(400).json({ message: "Vehicle number is required" });
+    }
+
+    const connection = await db.promise();
+
+    try {
+        await connection.beginTransaction();
+
+        // 1. Fetch Current Data
+        const fetchQuery = `
+            SELECT 
+                v.vehicle_photo, v.vehicle_type, v.owner_id, v.document_id,
+                vd.book_copy, vd.license, vd.insurance
+            FROM vehicle v
+            LEFT JOIN vehicle_documents vd ON v.document_id = vd.documnet_id
+            WHERE v.vehicle_number = ?
+        `;
+        const [rows] = await connection.query(fetchQuery, [vehicleNumber]);
+        
+        if (rows.length === 0) {
+            await connection.rollback();
+            return res.status(404).json({ message: "Vehicle not found" });
+        }
+        const current = rows[0];
+
+        // 2. Handle R2 Uploads
+        const newVehiclePhoto = (files.vehiclePhoto && files.vehiclePhoto[0]) ? await uploadToR2(files.vehiclePhoto[0]) : current.vehicle_photo;
+        const newBookCopy = (files.bookCopyPhoto && files.bookCopyPhoto[0]) ? await uploadToR2(files.bookCopyPhoto[0]) : current.book_copy;
+        const newLicense = (files.licensePhoto && files.licensePhoto[0]) ? await uploadToR2(files.licensePhoto[0]) : current.license;
+        const newInsurance = (files.insurancePhoto && files.insurancePhoto[0]) ? await uploadToR2(files.insurancePhoto[0]) : current.insurance;
+
+        // 3. Prepare Text Data (FIXED: Strict check to avoid null/empty string overwrites)
+        const isValid = (val) => val !== undefined && val !== 'undefined' && val !== 'null' && val !== '';
+        
+        const finalType = isValid(vehicleType) ? vehicleType : current.vehicle_type;
+        const finalOwnerId = isValid(ownerId) ? ownerId : current.owner_id;
+
+        // 4. Update Vehicle Table
+        await connection.query(
+            "UPDATE vehicle SET vehicle_photo = ?, vehicle_type = ?, owner_id = ? WHERE vehicle_number = ?",
+            [newVehiclePhoto, finalType, finalOwnerId, vehicleNumber]
+        );
+
+        // 5. Update Documents Table
+        if (current.document_id) {
+            const [dateRows] = await connection.query("SELECT license_expiry_date, insurance_expiry_date FROM vehicle_documents WHERE documnet_id = ?", [current.document_id]);
+            const currentDates = dateRows[0] || {};
+            
+            const finalLicExp = isValid(licenseExpiry) ? licenseExpiry : currentDates.license_expiry_date;
+            const finalInsExp = isValid(insuranceExpiry) ? insuranceExpiry : currentDates.insurance_expiry_date;
+
+            await connection.query(
+                `UPDATE vehicle_documents 
+                 SET book_copy = ?, license = ?, license_expiry_date = ?, insurance = ?, insurance_expiry_date = ? 
+                 WHERE documnet_id = ?`,
+                [newBookCopy, newLicense, finalLicExp, newInsurance, finalInsExp, current.document_id]
+            );
+        }
+
+        // 6. Update Owner Contact
+        if (isValid(ownerContact) && finalOwnerId) {
+            await connection.query("UPDATE owner SET contact = ? WHERE owner_id = ?", [ownerContact, finalOwnerId]);
+        }
+
+        await connection.commit();
+        res.status(200).json({ message: "Vehicle updated successfully" });
+
+    } catch (error) {
+        await connection.rollback();
+        console.error("Error updating vehicle:", error);
+        res.status(500).json({ message: "Failed to update vehicle details" });
+    }
+};
