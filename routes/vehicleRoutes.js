@@ -25,4 +25,6 @@ router.get('/vehicleDetails', vehicleController.getVehicleDetails);
 
 router.put('/update', uploadFields, vehicleController.updateVehicle);
 
+router.put('/blacklist', vehicleController.addToBlacklist);
+
 module.exports = router;

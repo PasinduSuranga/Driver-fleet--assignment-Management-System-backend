@@ -3,6 +3,19 @@ const {S3Client, PutObjectCommand} = require('@aws-sdk/client-s3');
 const crypto = require('crypto');
 const { sendSMS } = require('../services/smsService');
 
+
+function capitalizeFirstLetter(str) {
+    if (!str) return "";
+    return str.charAt(0).toUpperCase() + str.slice(1);
+    }
+
+
+function toUpper(str) {
+  if (!str) return "";
+  return str.toUpperCase();
+}
+
+
 exports.getVehicleCount = (req, res) => {
     const query = `
         SELECT 
@@ -43,6 +56,7 @@ exports.getVehicles = (req, res) => {
         FROM vehicle v
         LEFT JOIN vehicle_category c ON v.category_id = c.category_id
         LEFT JOIN vehicle_documents d ON v.document_id = d.documnet_id
+        WHERE v.is_blacklisted = '0'
     `;
 
     db.query(query, (err, results) => {
@@ -158,10 +172,30 @@ exports.addVehicle = async (req, res) => {
                         });
                     }
 
-                    db.commit((err) => {
-                        if (err) return db.rollback(() => res.status(500).json({ error: "Commit Error" }));
-                        res.status(201).json({ message: "Vehicle added successfully!" });
+                    // --- SMS LOGIC STARTED ---
+                    // Fetch Owner Details to send SMS
+                    const ownerQuery = "SELECT contact, name FROM owner WHERE owner_id = ?";
+                    db.query(ownerQuery, [owner_id], async (err, ownerRows) => {
+                        if (!err && ownerRows.length > 0) {
+                            const ownerContact = ownerRows[0].contact;
+                            const ownerName = ownerRows[0].name;
+                            const message = `Dear ${capitalizeFirstLetter(ownerName)}, Your vehicle ${toUpper(registrationNumber)} has been successfully registered with City Lion Express Tours. Thank you for partnering with us!`;
+                            
+                            // Send the SMS
+                            try {
+                                await sendSMS(ownerContact, message);
+                            } catch (smsError) {
+                                console.error("SMS Sending Error:", smsError);
+                            }
+                        }
+
+                        // Commit Transaction
+                        db.commit((err) => {
+                            if (err) return db.rollback(() => res.status(500).json({ error: "Commit Error" }));
+                            res.status(201).json({ message: "Vehicle added successfully!" });
+                        });
                     });
+                    // --- SMS LOGIC ENDED ---
                 });
             });
         });
@@ -302,4 +336,50 @@ exports.updateVehicle = async (req, res) => {
         console.error("Error updating vehicle:", error);
         res.status(500).json({ message: "Failed to update vehicle details" });
     }
+};
+
+
+exports.addToBlacklist = (req, res) => {
+    const { vehicleNumber } = req.body;
+
+    if (!vehicleNumber) {
+        return res.status(400).json({ message: "Vehicle number is required" });
+    }
+
+    const query = "UPDATE vehicle SET is_blacklisted = '1' WHERE vehicle_number = ?";
+
+    db.query(query, [vehicleNumber], (err, result) => {
+        if (err) {
+            console.error("Error blacklisting vehicle:", err);
+            return res.status(500).json({ message: "Database error" });
+        }
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ message: "Vehicle not found" });
+        }
+
+        // --- NEW: Send SMS to Owner ---
+        // Fetch owner details associated with this vehicle
+        const ownerQuery = `
+            SELECT o.contact, o.name 
+            FROM vehicle v 
+            JOIN owner o ON v.owner_id = o.owner_id 
+            WHERE v.vehicle_number = ?
+        `;
+
+        db.query(ownerQuery, [vehicleNumber], async (err, rows) => {
+            if (!err && rows.length > 0) {
+                const { contact, name } = rows[0];
+                const message = `Dear ${capitalizeFirstLetter(name)}, Your vehicle ${toUpper(vehicleNumber)} has been added to the blacklist. Please contact City Lion Express Tours for more information.`;
+                
+                // Send the SMS
+                await sendSMS(contact, message);
+            } else if (err) {
+                console.error("Error fetching owner for SMS:", err);
+            }
+
+            // Return success response regardless of SMS outcome
+            res.status(200).json({ message: "Vehicle has been added to the blacklist successfully." });
+        });
+    });
 };
