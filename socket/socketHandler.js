@@ -6,8 +6,8 @@ const fetchCounts = () => { // Removed 'async' as we return a Promise directly
         const vehicleQuery = `
             SELECT 
                 COUNT(*) as totalVehicles,
-                SUM(CASE WHEN vehicle_type = 'OwnFleet' THEN 1 ELSE 0 END) as ownFleetVehicles,
-                SUM(CASE WHEN vehicle_type = 'OutSource' THEN 1 ELSE 0 END) as outSourceVehicles
+                SUM(CASE WHEN vehicle_type = 'Own Fleet' THEN 1 ELSE 0 END) as ownFleetVehicles,
+                SUM(CASE WHEN vehicle_type = 'Out Source' THEN 1 ELSE 0 END) as outSourceVehicles
             FROM vehicle
         `;
 

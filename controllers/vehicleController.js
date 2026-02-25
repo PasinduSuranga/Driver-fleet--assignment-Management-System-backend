@@ -6,8 +6,13 @@ const { sendSMS } = require('../services/smsService');
 
 function capitalizeFirstLetter(str) {
     if (!str) return "";
-    return str.charAt(0).toUpperCase() + str.slice(1);
-    }
+    
+    return str
+        .toLowerCase()
+        .split(" ")
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(" ");
+}
 
 
 function toUpper(str) {
@@ -20,8 +25,8 @@ exports.getVehicleCount = (req, res) => {
     const query = `
         SELECT 
             COUNT(*) as totalVehicles,
-            SUM(CASE WHEN vehicle_type = 'OwnFleet' THEN 1 ELSE 0 END) as ownFleetVehicles,
-            SUM(CASE WHEN vehicle_type = 'OutSource' THEN 1 ELSE 0 END) as outSourceVehicles
+            SUM(CASE WHEN vehicle_type = 'Own Fleet' THEN 1 ELSE 0 END) as ownFleetVehicles,
+            SUM(CASE WHEN vehicle_type = 'Out Source' THEN 1 ELSE 0 END) as outSourceVehicles
         FROM vehicle
     `;
 
