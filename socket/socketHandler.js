@@ -15,11 +15,13 @@ const fetchCounts = () => { // Removed 'async' as we return a Promise directly
 
         const assignmentQuery = `
             SELECT 
-                COUNT(*) as totalAssignments,
-                SUM(CASE WHEN status = '1' THEN 1 ELSE 0 END) as ongoingAssignments,
-                SUM(CASE WHEN MONTH(start_date) = MONTH(CURDATE()) AND YEAR(start_date) = YEAR(CURDATE()) THEN 1 ELSE 0 END) as totalAssignmentsThisMonth
-            FROM assignment
-        `;
+        COUNT(*) AS total_assignments,
+        SUM(CASE WHEN status = 'ongoing' THEN 1 ELSE 0 END) AS ongoing_assignments,
+        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed_assignments
+    FROM assignment
+    WHERE MONTH(est_s_TD) = MONTH(CURDATE())
+    AND YEAR(est_s_TD) = YEAR(CURDATE());
+        `; 
 
         // Run all queries in parallel for better performance
         // We wrap db.query in small Promises to use Promise.all
@@ -39,9 +41,9 @@ const fetchCounts = () => { // Removed 'async' as we return a Promise directly
                         totalDrivers: driverRes[0]?.totalDrivers || 0
                     },
                     assignmentCounts: {
-                        totalAssignments: assignmentRes[0]?.totalAssignments || 0,
-                        ongoingAssignments: Number(assignmentRes[0]?.ongoingAssignments) || 0,
-                        totalAssignmentsThisMonth: Number(assignmentRes[0]?.totalAssignmentsThisMonth) || 0
+                        total_assignments: assignmentRes[0]?.total_assignments || 0,
+                        ongoing_assignments: Number(assignmentRes[0]?.ongoing_assignments) || 0,
+                        completed_assignments: Number(assignmentRes[0]?.completed_assignments) || 0
                     }
                 });
             })
