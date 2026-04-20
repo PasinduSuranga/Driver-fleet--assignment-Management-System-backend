@@ -214,26 +214,19 @@ exports.addVehicle = async (req, res) => {
 
 exports.getVehicleDetails = async (req, res) => {
   const { vehicleNumber } = req.query;
+  if (!vehicleNumber) return res.status(400).json({ error: 'Vehicle number is required' });
 
-  if (!vehicleNumber) {
-    return res.status(400).json({ error: 'Vehicle number is required' });
-  }
-
-  // UPDATED QUERY based on your screenshots:
-  // 1. Joins 'vehicle' with 'owner', 'vehicle_category', and 'vehicle_documents'.
-  // 2. Uses the exact column spelling 'documnet_id' found in your vehicle_documents table.
+  // --- ADDED v.is_blacklisted TO THE SELECT QUERY ---
   const query = `
     SELECT 
       v.vehicle_number, 
       v.vehicle_photo, 
       v.vehicle_type, 
       v.availability,
-      
+      v.is_blacklisted,
       o.name AS owner_name, 
       o.contact AS contact_no, 
-      
       vc.category_name, 
-      
       vd.book_copy, 
       vd.license AS license_copy, 
       vd.license_expiry_date AS license_expiry, 
@@ -247,15 +240,8 @@ exports.getVehicleDetails = async (req, res) => {
   `;
 
   try {
-    // We use .promise() here because you are using mysql2 with createConnection.
-    // This wrapper allows us to use 'await' without changing your db.js file.
     const [results] = await db.promise().query(query, [vehicleNumber]);
-
-    if (results.length === 0) {
-      return res.status(404).json({ error: 'Vehicle not found' });
-    }
-
-    // Return the single vehicle object
+    if (results.length === 0) return res.status(404).json({ error: 'Vehicle not found' });
     res.status(200).json(results[0]);
   } catch (error) {
     console.error('Error fetching vehicle details:', error);
@@ -386,5 +372,50 @@ exports.addToBlacklist = (req, res) => {
             // Return success response regardless of SMS outcome
             res.status(200).json({ message: "Vehicle has been added to the blacklist successfully." });
         });
+    });
+};
+
+exports.getBlacklistedVehicles = (req, res) => {
+    const query = `
+        SELECT 
+            v.vehicle_number, 
+            v.vehicle_type, 
+            v.availability, 
+            v.category_id,
+            c.category_name
+        FROM vehicle v
+        LEFT JOIN vehicle_category c ON v.category_id = c.category_id
+        WHERE v.is_blacklisted = '1'
+    `;
+
+    db.query(query, (err, results) => {
+        if (err) {
+            console.error("Error fetching blacklisted vehicles:", err);
+            return res.status(500).json({ error: "Database error" });
+        }
+        res.status(200).json(results);
+    });
+};
+
+exports.removeFromBlacklist = (req, res) => {
+    const { vehicleNumber } = req.body;
+
+    if (!vehicleNumber) {
+        return res.status(400).json({ message: "Vehicle number is required" });
+    }
+
+    const query = "UPDATE vehicle SET is_blacklisted = '0' WHERE vehicle_number = ?";
+
+    db.query(query, [vehicleNumber], (err, result) => {
+        if (err) {
+            console.error("Error removing vehicle from blacklist:", err);
+            return res.status(500).json({ message: "Database error" });
+        }
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ message: "Vehicle not found" });
+        }
+
+        res.status(200).json({ message: "Vehicle successfully removed from blacklist." });
     });
 };

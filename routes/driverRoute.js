@@ -23,4 +23,8 @@ router.get('/driverDetails', driverController.getDriverDetails);
 
 router.put('/update', uploadFields, driverController.updateDriver);
 
+router.get('/blacklisted', driverController.getBlacklistedDrivers);
+
+router.put('/unblacklist', driverController.removeFromBlacklist);
+
 module.exports = router;

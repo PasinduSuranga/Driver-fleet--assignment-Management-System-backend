@@ -16,6 +16,7 @@ const notificationRoutes = require('./routes/notificationRoutes');
 const categoryRoutes = require('./routes/categoryRoutes');
 const ownerRoutes = require('./routes/ownerRoutes');
 const userRoutes = require('./routes/userRoutes');
+const adminRoutes = require('./routes/adminRoutes');
 
 const app = express();
 
@@ -48,6 +49,7 @@ app.use('/notification', notificationRoutes);
 app.use('/category', categoryRoutes);
 app.use('/owner', ownerRoutes);
 app.use('/user', userRoutes);
+app.use('/admin', adminRoutes);
 
 const PORT = process.env.PORT || 3000;
 

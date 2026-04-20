@@ -40,6 +40,8 @@ exports.getDrivers = async (req, res) => {
         SELECT 
             d.driver_id, 
             d.name, 
+            d.contact,
+            d.license_number,
             d.is_available,
             dl.expiry_date 
         FROM driver d
@@ -361,4 +363,45 @@ exports.updateDriver = async (req, res) => {
     console.error("Error updating driver:", error);
     res.status(500).json({ message: "Failed to update driver details" });
   }
+};
+
+exports.getBlacklistedDrivers = (req, res) => {
+    const query = `
+        SELECT 
+            d.driver_id, d.name, d.contact, d.is_available, d.license_number, d.is_blacklisted,
+            dl.expiry_date
+        FROM driver d
+        LEFT JOIN driver_license dl ON d.license_number = dl.licen_number
+        WHERE d.is_blacklisted = '1'
+    `;
+
+    db.query(query, (err, results) => {
+        if (err) {
+            console.error("Error fetching blacklisted drivers:", err);
+            return res.status(500).json({ error: "Database error" });
+        }
+        res.status(200).json(results);
+    });
+};
+
+// Remove a driver from the blacklist
+exports.removeFromBlacklist = (req, res) => {
+    const { driverId } = req.body;
+
+    if (!driverId) {
+        return res.status(400).json({ message: "Driver ID is required" });
+    }
+
+    const query = "UPDATE driver SET is_blacklisted = '0' WHERE driver_id = ?";
+
+    db.query(query, [driverId], (err, result) => {
+        if (err) {
+            console.error("Error removing driver from blacklist:", err);
+            return res.status(500).json({ message: "Database error" });
+        }
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ message: "Driver not found" });
+        }
+        res.status(200).json({ message: "Driver successfully removed from blacklist." });
+    });
 };

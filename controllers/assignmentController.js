@@ -280,6 +280,22 @@ exports.getCompletedAssignments = async (req, res) => {
     }
 };
 
+exports.getCancelledAssignments = async (req, res) => {
+    try {
+        const [rows] = await db.promise().query(
+            `SELECT a.*, c.company_name, d.name as driver_name 
+             FROM assignment a
+             LEFT JOIN customer c ON a.customer_id = c.customer_id
+             LEFT JOIN driver d ON a.driver_id = d.driver_id
+             WHERE a.status = 'cancelled'
+             ORDER BY a.est_e_TD DESC`
+        );
+        res.json(rows);
+    } catch (error) {
+        res.status(500).json({ error: "Failed to fetch cancelled assignments." });
+    }
+};
+
 // Get Financial Reports (Invoices and Payroll per month)
 exports.getMonthlyReports = async (req, res) => {
     const { month } = req.query; // Format expected: YYYY-MM
@@ -462,6 +478,47 @@ exports.getAssignmentCount = async (req, res) => {
     }
 };
 
+exports.cancelAssignment = async (req, res) => {
+    const { id } = req.params;
 
+    try {
+        // We use db.promise().query to match your async/await style
+        const [result] = await db.promise().query(
+            `UPDATE assignment SET status = 'cancelled' WHERE assignment_id = ? AND status = 'ongoing'`,
+            [id]
+        );
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ error: "Assignment not found or already completed/cancelled." });
+        }
+
+        res.status(200).json({ message: "Assignment has been successfully cancelled." });
+    } catch (error) {
+        console.error("Error cancelling assignment:", error);
+        res.status(500).json({ error: "Failed to cancel assignment." });
+    }
+};
+
+exports.getAdminAllCustomers = (req, res) => {
+    const query = `
+        SELECT 
+            customer_id, 
+            company_name, 
+            contact, 
+            address, 
+            company_rate, 
+            driver_rate 
+        FROM customer 
+        ORDER BY company_name ASC
+    `;
+
+    db.query(query, (err, results) => {
+        if (err) {
+            console.error("Error fetching customers:", err);
+            return res.status(500).json({ error: "Database error while fetching customers." });
+        }
+        res.status(200).json(results);
+    });
+};
 ///////////////////////////////////////////////////////////////////////////////////////////////
 

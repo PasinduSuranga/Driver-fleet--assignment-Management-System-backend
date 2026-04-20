@@ -16,4 +16,11 @@ router.post('/resetPassword', authenticationController.resetPassword);
 
 router.get('/getUsers/:id', authenticationController.getUser);
 
+router.get('/details/:userId', authenticationController.getUserProfile);
+router.put('/update-password', authenticationController.updatePassword);
+
+// New 2-step email update routes
+router.post('/request-email-update', authenticationController.requestEmailUpdate);
+router.put('/verify-email-update', authenticationController.verifyEmailUpdate);
+
 module.exports = router;
