@@ -1,27 +1,28 @@
-const db = require('../config/db'); // Adjust path to your db connection
+const db = require('../config/db');
 const { v4: uuidv4 } = require('uuid');
 
 // Validation Helper
 const validateCustomer = (data) => {
     const { company_name, contact, address, company_rate_per_km, driver_rate_per_km } = data;
-    
+
     if (!company_name || company_name.length > 100) return "Name must be between 1 and 100 characters.";
     if (!address || address.length > 250) return "Address must be between 1 and 250 characters.";
-    
-    // Regex for Sri Lankan numbers: starts with 0 (10 digits) OR +94 (12 chars)
+
+    // validation for Sri Lankan numbers
     const phoneRegex = /^(0\d{9}|\+94\d{9})$/;
     if (!contact || !phoneRegex.test(contact)) return "Contact must be 10 digits starting with 0, or 12 characters starting with +94.";
-    
-    // Ensure rates are valid numbers
+
+    // Validate rates are valid numbers
     if (isNaN(company_rate_per_km) || isNaN(driver_rate_per_km)) return "Rates must be valid numbers.";
-    
-    return null; // Null means no errors
+
+    return null; //no errors
 };
 
-// GET all customers
+/**
+ * Retrieves a list of all customers, sorted alphabetically by company name.
+ */
 exports.getAllCustomers = async (req, res) => {
     try {
-        // FIX: Added .promise() here
         const [rows] = await db.promise().query('SELECT * FROM customer ORDER BY company_name ASC');
         res.json(rows);
     } catch (error) {
@@ -29,7 +30,9 @@ exports.getAllCustomers = async (req, res) => {
     }
 };
 
-// POST new customer
+/**
+ * Creates a new customer record after validating the input data.
+ */
 exports.createCustomer = async (req, res) => {
     const validationError = validateCustomer(req.body);
     if (validationError) return res.status(400).json({ error: validationError });
@@ -38,7 +41,6 @@ exports.createCustomer = async (req, res) => {
     const customer_id = uuidv4();
 
     try {
-        // FIX: Added .promise() here
         await db.promise().query(
             `INSERT INTO customer (customer_id, company_name, contact, address, company_rate, driver_rate) 
              VALUES (?, ?, ?, ?, ?, ?)`,
@@ -50,7 +52,9 @@ exports.createCustomer = async (req, res) => {
     }
 };
 
-// PUT update customer
+/**
+ * Updates an existing customer's details after validating the input data.
+ */
 exports.updateCustomer = async (req, res) => {
     const validationError = validateCustomer(req.body);
     if (validationError) return res.status(400).json({ error: validationError });
@@ -59,7 +63,6 @@ exports.updateCustomer = async (req, res) => {
     const { id } = req.params;
 
     try {
-        // FIX: Added .promise() here
         await db.promise().query(
             `UPDATE customer 
              SET company_name = ?, contact = ?, address = ?, company_rate = ?, driver_rate = ? 
@@ -72,20 +75,20 @@ exports.updateCustomer = async (req, res) => {
     }
 };
 
-// DELETE customer
+/**
+ * Deletes a customer from the database. 
+ */
 exports.deleteCustomer = async (req, res) => {
     try {
-        // FIX: Added .promise() here
         await db.promise().query('DELETE FROM customer WHERE customer_id = ?', [req.params.id]);
         res.json({ message: "Customer removed successfully!" });
     } catch (error) {
-        // If customer is tied to an assignment, DB will throw a foreign key error
         res.status(500).json({ error: "Cannot delete customer. They may have existing assignments." });
     }
 };
 
 
-
+// Assignment Validation
 const validateAssignment = (data) => {
     const { customer_id, start_location, end_location, est_s_TD, est_e_TD, vehicle_number, driver_id } = data;
 
@@ -94,7 +97,7 @@ const validateAssignment = (data) => {
     if (!driver_id) return "Driver is required.";
     if (!start_location || start_location.length > 100) return "Start location must be between 1 and 100 characters.";
     if (!end_location || end_location.length > 100) return "End location must be between 1 and 100 characters.";
-    
+
     const start = new Date(est_s_TD);
     const end = new Date(est_e_TD);
     if (isNaN(start.getTime()) || isNaN(end.getTime())) return "Invalid date and time format.";
@@ -103,7 +106,9 @@ const validateAssignment = (data) => {
     return null;
 };
 
-// 1. Get Available Vehicles and Drivers for a specific time slot
+/**
+ * Retrieves available (non-blacklisted and not overlapping with the given time slot) 
+ */
 exports.getAvailableResources = async (req, res) => {
     const { est_s_TD, est_e_TD } = req.body;
 
@@ -119,7 +124,7 @@ exports.getAvailableResources = async (req, res) => {
                  SELECT vehicle_number FROM assignment 
                  WHERE est_s_TD < ? AND est_e_TD > ?
              )`,
-            [est_e_TD, est_s_TD] // A overlaps B if A.start < B.end AND A.end > B.start
+            [est_e_TD, est_s_TD]
         );
 
         // Query available drivers (Not blacklisted AND not in an overlapping assignment)
@@ -141,7 +146,10 @@ exports.getAvailableResources = async (req, res) => {
     }
 };
 
-// 2. Create the Assignment
+/**
+ * Creates a new trip assignment. Validates inputs, checks for resource conflicts, 
+ * fetches customer rates, and saves the assignment to the database.
+ */
 exports.createAssignment = async (req, res) => {
     const error = validateAssignment(req.body);
     if (error) return res.status(400).json({ error });
@@ -150,7 +158,7 @@ exports.createAssignment = async (req, res) => {
     const assignment_id = uuidv4();
 
     try {
-        // Step 1: Double check overlap just in case someone booked it while user was filling the form
+        // Double check overlap just in case someone booked it while user was filling the form
         const [conflicts] = await db.promise().query(
             `SELECT assignment_id FROM assignment 
              WHERE (vehicle_number = ? OR driver_id = ?)
@@ -162,7 +170,7 @@ exports.createAssignment = async (req, res) => {
             return res.status(400).json({ error: "The selected driver or vehicle was just booked for this time slot. Please select another." });
         }
 
-        // Step 2: Fetch the customer rates to save them in the assignment
+        //Fetch the customer rates to save them in the assignment
         const [customerRates] = await db.promise().query(
             `SELECT company_rate, driver_rate FROM customer WHERE customer_id = ?`,
             [customer_id]
@@ -177,7 +185,7 @@ exports.createAssignment = async (req, res) => {
 
         console.log("Company Rate:", company_rate, "Driver Rate:", driver_rate);
 
-        // Step 3: Insert into assignment table
+        //Insert into assignment table
         await db.promise().query(
             `INSERT INTO assignment 
             (assignment_id, driver_id, vehicle_number, customer_id, est_s_TD, est_e_TD, start_location, end_location, company_rate, driver_rate) 
@@ -192,6 +200,9 @@ exports.createAssignment = async (req, res) => {
     }
 };
 
+/**
+ * Retrieves a list of all ongoing assignments along with customer and driver details.
+ */
 exports.getOngoingAssignments = async (req, res) => {
     try {
         const [rows] = await db.promise().query(
@@ -204,17 +215,18 @@ exports.getOngoingAssignments = async (req, res) => {
         );
         res.json(rows);
     } catch (error) {
-      console.log(error);
+        console.log(error);
         res.status(500).json({ error: "Failed to fetch ongoing assignments." });
     }
 };
 
-// Complete Assignment and Calculate Payments
+/**
+ * Marks an ongoing assignment as completed and calculates final payments 
+ * based on the provided total kilometers and applicable rates.
+ */
 exports.completeAssignment = async (req, res) => {
-    // Fixed the typo here
-    const { id } = req.params; 
-    
-    // Ensure totalKMS is explicitly treated as a decimal/float number
+    const { id } = req.params;
+
     const totalKMS = parseFloat(req.body.totalKMS);
 
     if (!totalKMS || isNaN(totalKMS) || totalKMS <= 0) {
@@ -222,8 +234,7 @@ exports.completeAssignment = async (req, res) => {
     }
 
     try {
-        // STEP 1: Fetch the rates safely. We join the customer table as a backup 
-        // in case the assignment record is old and has NULL rates.
+        //Fetch the rates safely
         const [rows] = await db.promise().query(
             `SELECT a.company_rate, a.driver_rate, c.company_rate, c.driver_rate 
              FROM assignment a
@@ -236,15 +247,15 @@ exports.completeAssignment = async (req, res) => {
             return res.status(404).json({ error: "Assignment not found." });
         }
 
-        // STEP 2: Extract rates. If assignment rates are NULL, use the customer's current rates.
+        //Extract rates
         const compRate = rows[0].company_rate || rows[0].company_rate_per_km || 0;
         const drivRate = rows[0].driver_rate || rows[0].driver_rate_per_km || 0;
 
-        // STEP 3: Do the math in JavaScript (This prevents the SQL NULL bug)
+        //Do the math in JavaScript 
         const company_payment = (totalKMS * parseFloat(compRate)).toFixed(2);
         const driver_payment = (totalKMS * parseFloat(drivRate)).toFixed(2);
 
-        // STEP 4: Update the database with the exact calculated values
+        //Update the database with the exact calculated values
         await db.promise().query(
             `UPDATE assignment 
              SET totalKMS = ?, 
@@ -257,13 +268,15 @@ exports.completeAssignment = async (req, res) => {
 
         res.json({ message: "Trip marked as completed and payments calculated successfully!" });
     } catch (error) {
-        // Logging the error makes future debugging much easier!
+        // Logging the error
         console.error("Error in completeAssignment:", error);
         res.status(500).json({ error: "Failed to complete assignment." });
     }
 };
 
-// Get Completed Assignments
+/**
+ * Retrieves a list of all completed assignments along with customer and driver details.
+ */
 exports.getCompletedAssignments = async (req, res) => {
     try {
         const [rows] = await db.promise().query(
@@ -280,6 +293,9 @@ exports.getCompletedAssignments = async (req, res) => {
     }
 };
 
+/**
+ * Retrieves a list of all cancelled assignments along with customer and driver details.
+ */
 exports.getCancelledAssignments = async (req, res) => {
     try {
         const [rows] = await db.promise().query(
@@ -296,9 +312,11 @@ exports.getCancelledAssignments = async (req, res) => {
     }
 };
 
-// Get Financial Reports (Invoices and Payroll per month)
+/**
+ * Generates financial reports (Total Customer Invoices and Total Driver Payroll) for a given month.
+ */
 exports.getMonthlyReports = async (req, res) => {
-    const { month } = req.query; // Format expected: YYYY-MM
+    const { month } = req.query;
     if (!month) return res.status(400).json({ error: "Month parameter is required." });
 
     try {
@@ -329,7 +347,10 @@ exports.getMonthlyReports = async (req, res) => {
 };
 
 
-// Add this alongside your other exports
+/**
+ * Retrieves comprehensive details for a specific assignment including 
+ * associated vehicle, vehicle documents, driver, and driver license photos.
+ */
 exports.getAssignmentDocData = async (req, res) => {
     const { id } = req.params;
 
@@ -359,22 +380,24 @@ exports.getAssignmentDocData = async (req, res) => {
     }
 };
 
+/**
+ * Proxies an image request to bypass CORS restrictions.
+ */
 exports.proxyImage = (req, res) => {
     const imageUrl = req.query.url;
     if (!imageUrl) return res.status(400).send('URL is required');
 
     const httpOrHttps = imageUrl.startsWith('https') ? require('https') : require('http');
-    
+
     httpOrHttps.get(imageUrl, (response) => {
         if (response.statusCode !== 200) {
             return res.status(404).send('Image not found');
         }
-        
-        // This makes the browser perfectly happy and allows html2pdf to download the images
+
         res.set('Access-Control-Allow-Origin', '*');
         res.set('Cross-Origin-Resource-Policy', 'cross-origin');
         res.set('Content-Type', response.headers['content-type'] || 'image/jpeg');
-        
+
         // Stream the image directly to the frontend
         response.pipe(res);
     }).on('error', (err) => {
@@ -383,6 +406,9 @@ exports.proxyImage = (req, res) => {
     });
 };
 
+/**
+ * Retrieves detailed invoice data for a completed assignment.
+ */
 exports.getInvoiceData = async (req, res) => {
     const { id } = req.params;
     try {
@@ -432,7 +458,7 @@ exports.getMonthlyReports = async (req, res) => {
                     assignments: []
                 };
             }
-            
+
             driverMap[row.driver_id].total_pay += parseFloat(row.driver_payment);
             driverMap[row.driver_id].assignments.push({
                 assignment_id: row.assignment_id,
@@ -453,6 +479,9 @@ exports.getMonthlyReports = async (req, res) => {
 };
 
 
+/**
+ * Retrieves total, ongoing, and completed assignment counts.
+ */
 exports.getAssignmentCount = async (req, res) => {
     try {
         // Query calculates overall total, ongoing, and completed counts in one go
@@ -478,11 +507,13 @@ exports.getAssignmentCount = async (req, res) => {
     }
 };
 
+/**
+ * Cancels an ongoing assignment by updating its status.
+ */
 exports.cancelAssignment = async (req, res) => {
     const { id } = req.params;
 
     try {
-        // We use db.promise().query to match your async/await style
         const [result] = await db.promise().query(
             `UPDATE assignment SET status = 'cancelled' WHERE assignment_id = ? AND status = 'ongoing'`,
             [id]
@@ -499,6 +530,9 @@ exports.cancelAssignment = async (req, res) => {
     }
 };
 
+/**
+ * Retrieves all customers for administrative views.
+ */
 exports.getAdminAllCustomers = (req, res) => {
     const query = `
         SELECT 
@@ -520,5 +554,4 @@ exports.getAdminAllCustomers = (req, res) => {
         res.status(200).json(results);
     });
 };
-///////////////////////////////////////////////////////////////////////////////////////////////
 

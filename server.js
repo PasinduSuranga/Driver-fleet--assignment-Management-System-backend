@@ -18,9 +18,11 @@ const ownerRoutes = require('./routes/ownerRoutes');
 const userRoutes = require('./routes/userRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 
+// Create Express application instance
 const app = express();
 
-// 1. Create HTTP server
+// 1. Create HTTP server using Express app
+// This allows us to attach both Express and Socket.io to the same server
 const server = http.createServer(app);
 
 // 2. Initialize Socket.io
@@ -32,13 +34,20 @@ const io = new Server(server, {
     }
 });
 
-// 3. Pass the 'io' instance to your handler
+// 3. Pass the 'io' instance to your handler for managing real-time connections
 socketHandler(io);
 
-// Middleware
+// ==========================================
+// Middleware Configuration
+// ==========================================
+// Parse incoming JSON requests and enable CORS
 app.use(express.json());
 app.use(cors());
 
+// ==========================================
+// Route Definitions
+// ==========================================
+// Map specific URL paths to their respective route handlers
 // Routes
 app.use('/test', testRoutes);
 app.use('/driver', driverRoutes);

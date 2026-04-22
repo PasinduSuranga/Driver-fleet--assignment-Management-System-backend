@@ -1,6 +1,7 @@
 const mysql = require('mysql2');
 
-//creating the connection to the database
+// Create the connection instance to the MySQL database
+// Using environment variables for secure credential storage
 const db = mysql.createConnection({
     host: 'localhost',
     user: 'root',
@@ -8,7 +9,8 @@ const db = mysql.createConnection({
     database: 'clet_database'
 });
 
-//connecting to the database
+// Establish and verify the connection to the database
+// Logs an error if the connection fails, otherwise confirms success
 db.connect((err) => {
     if (err) {
         console.error('Error connecting to the database:', err);

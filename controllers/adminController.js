@@ -1,11 +1,15 @@
-const db = require('../config/db'); // Adjust path to your database config
+const db = require('../config/db');
 
+/**
+ * Fetches dashboard reports including gross margin, customer billing, driver earnings, 
+ * vehicle mileage, route frequency, cancelled trips, and blacklist logs.
+ */
 exports.getDashboardReports = async (req, res) => {
     const { month, fleetType } = req.query;
 
     // Filters setup
-    const monthFilter = month ? month : ''; // e.g., '2026-04' or empty for all-time
-    const fleetFilter = fleetType ? fleetType : ''; // e.g., 'Own Fleet', 'Out Source' or empty
+    const monthFilter = month ? month : ''; // month or empty for all
+    const fleetFilter = fleetType ? fleetType : ''; // fleet type or empty for all
 
     try {
         const dbPromise = db.promise();
@@ -109,10 +113,10 @@ exports.getDashboardReports = async (req, res) => {
         `;
         const [cancelledResult] = await dbPromise.query(cancelledQuery, [monthFilter, monthFilter, fleetFilter, fleetFilter]);
 
-        // 7. Blacklist Logs (Unaffected by date/fleet type - shows current global state)
+        // 7. Blacklist Logs - global
         const [blacklistedVehicles] = await dbPromise.query(`SELECT vehicle_number, vehicle_type FROM vehicle WHERE is_blacklisted = '1'`);
         const [blacklistedDrivers] = await dbPromise.query(`SELECT driver_id, name, contact FROM driver WHERE is_blacklisted = '1'`);
-        const [blacklistedUsers] = await dbPromise.query(`SELECT user_id, name, email, role FROM user WHERE is_approved = 3`); // 3 indicates blacklisted
+        const [blacklistedUsers] = await dbPromise.query(`SELECT user_id, name, email, role FROM user WHERE is_approved = 3`);
 
         res.status(200).json({
             grossMargin: marginResult[0] || { total_revenue: 0, total_payout: 0, gross_margin: 0 },
@@ -134,26 +138,29 @@ exports.getDashboardReports = async (req, res) => {
     }
 };
 
+/**
+ * Retrieves key statistics for the dashboard, such as ongoing assignments, 
+ * fleet status, driver status, pending user approvals, and active dispatch details.
+ */
 exports.getDashboardStats = async (req, res) => {
     try {
         const dbPromise = db.promise();
 
-        // 1. Ongoing Assignments (Live Pulse)
+        // 1. Ongoing Assignments
         const [[{ ongoingCount }]] = await dbPromise.query(`SELECT COUNT(*) AS ongoingCount FROM assignment WHERE status = 'ongoing'`);
 
-        // 2. Fleet Status (Total & Blacklisted)
+        // 2. Fleet Status
         const [[{ totalVehicles }]] = await dbPromise.query(`SELECT COUNT(*) AS totalVehicles FROM vehicle`);
         const [[{ blacklistedVehicles }]] = await dbPromise.query(`SELECT COUNT(*) AS blacklistedVehicles FROM vehicle WHERE is_blacklisted = '1'`);
 
-        // 3. Driver Status (Total & Blacklisted)
+        // 3. Driver Status
         const [[{ totalDrivers }]] = await dbPromise.query(`SELECT COUNT(*) AS totalDrivers FROM driver`);
         const [[{ blacklistedDrivers }]] = await dbPromise.query(`SELECT COUNT(*) AS blacklistedDrivers FROM driver WHERE is_blacklisted = '1'`);
 
         // 4. Pending User Approvals
         const [[{ pendingUsers }]] = await dbPromise.query(`SELECT COUNT(*) AS pendingUsers FROM user WHERE is_approved = 0`);
 
-        // 5. Today's Active Dispatch (Latest 5 ongoing trips for the mini-table)
-        // UPDATED: Joined with customer and driver tables to get company_name and driver_name
+        // 5. Today's Active Dispatch 
         const [activeDispatch] = await dbPromise.query(`
             SELECT 
                 a.assignment_id, 

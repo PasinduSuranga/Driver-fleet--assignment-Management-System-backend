@@ -1,6 +1,11 @@
 const db = require('../config/db');
 
-// Example function to get all users
+/**
+ * Retrieves all users from the database for testing purposes.
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ */
 exports.getAllUsers = (req, res) => {
     const query = 'SELECT * FROM user';
     db.query(query, (err, results) => {

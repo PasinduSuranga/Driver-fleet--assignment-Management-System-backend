@@ -11,6 +11,9 @@ const transporter = nodemailer.createTransport({
     },
 });
 
+/**
+ * Registers a new user with a pending approval status.
+ */
 exports.userRegister = (req, res) => {
     const { name, email, password } = req.body;
 
@@ -19,7 +22,7 @@ exports.userRegister = (req, res) => {
     const role = 'user';
 
     const checkQuery = 'SELECT * FROM user WHERE email = ?';
-    
+
     db.query(checkQuery, [email], (err, results) => {
         if (err) {
             console.error('Database error checking user:', err);
@@ -29,7 +32,7 @@ exports.userRegister = (req, res) => {
         if (results.length > 0) {
             return res.status(409).json({ message: 'Email already registered.' });
         }
-        
+
         bcrypt.hash(password, 10, (hashErr, hash) => {
             if (hashErr) {
                 console.error('Error hashing password:', hashErr);
@@ -37,7 +40,7 @@ exports.userRegister = (req, res) => {
             }
 
             const insertQuery = 'INSERT INTO user (user_id, name, email, password, role) VALUES (?, ?, ?, ?, ?)';
-            
+
             db.query(insertQuery, [userId, name, email, hash, role], (insertErr, result) => {
                 if (insertErr) {
                     console.error('Error saving user:', insertErr);
@@ -66,6 +69,10 @@ exports.userRegister = (req, res) => {
 };
 
 
+/**
+ * Registers a new admin with a pending approval status.
+ * Hashes the password and sends a confirmation email.
+ */
 exports.adminRegister = (req, res) => {
     const { name, email, password } = req.body;
 
@@ -74,7 +81,7 @@ exports.adminRegister = (req, res) => {
     const role = 'admin';
 
     const checkQuery = 'SELECT * FROM user WHERE email = ?';
-    
+
     db.query(checkQuery, [email], (err, results) => {
         if (err) {
             console.error('Database error checking user:', err);
@@ -84,7 +91,7 @@ exports.adminRegister = (req, res) => {
         if (results.length > 0) {
             return res.status(409).json({ message: 'Email already registered.' });
         }
-        
+
         bcrypt.hash(password, 10, (hashErr, hash) => {
             if (hashErr) {
                 console.error('Error hashing password:', hashErr);
@@ -92,7 +99,7 @@ exports.adminRegister = (req, res) => {
             }
 
             const insertQuery = 'INSERT INTO user (user_id, name, email, password, role) VALUES (?, ?, ?, ?, ?)';
-            
+
             db.query(insertQuery, [userId, name, email, hash, role], (insertErr, result) => {
                 if (insertErr) {
                     console.error('Error saving user:', insertErr);
@@ -121,6 +128,10 @@ exports.adminRegister = (req, res) => {
 };
 
 
+/**
+ * Authenticates a user or admin.
+ * Checks approval status, verifies password, and generates a JWT token.
+ */
 exports.login = (req, res) => {
     const { email, password } = req.body;
     const query = 'SELECT * FROM user WHERE email = ?';
@@ -176,6 +187,9 @@ exports.login = (req, res) => {
 }
 
 
+/**
+ * Initiates the password reset process by generating an OTP and sending it via email.
+ */
 exports.forgotPassword = (req, res) => {
     const { email } = req.body;
     const query = 'SELECT * FROM user WHERE email = ?';
@@ -208,6 +222,10 @@ exports.forgotPassword = (req, res) => {
 };
 
 
+/**
+ * Verifies the OTP provided for password reset or email update.
+ * Checks if the OTP matches and has not expired.
+ */
 exports.verifyOTP = (req, res) => {
     const { email, otp } = req.body;
     const query = 'SELECT * FROM user WHERE email = ?';
@@ -231,6 +249,10 @@ exports.verifyOTP = (req, res) => {
 };
 
 
+/**
+ * Resets the user's password after OTP verification.
+ * Hashes the new password and clears the OTP fields in the database.
+ */
 exports.resetPassword = (req, res) => {
     const { email, otp, newPassword } = req.body;
 
@@ -240,7 +262,7 @@ exports.resetPassword = (req, res) => {
         if (results.length === 0) return res.status(404).json({ message: 'User not found' });
 
         const user = results[0];
-        
+
         if (user.OTP !== otp) {
             return res.status(400).json({ message: 'Invalid or expired session. Please start over.' });
         }
@@ -258,6 +280,9 @@ exports.resetPassword = (req, res) => {
 };
 
 
+/**
+ * Retrieves basic user details by ID.
+ */
 exports.getUser = (req, res) => {
     const userId = req.params.id;
     const query = "SELECT user_id, name, email, role FROM user WHERE user_id = ?";
@@ -270,33 +295,39 @@ exports.getUser = (req, res) => {
     });
 };
 
+/**
+ * Retrieves user profile information by ID.
+ */
 exports.getUserProfile = (req, res) => {
     const { userId } = req.params;
 
     if (!userId) return res.status(400).json({ error: "User ID is required." });
 
     const query = "SELECT user_id, name, email, role FROM user WHERE user_id = ?";
-    
+
     db.query(query, [userId], (err, results) => {
         if (err) {
             console.error("Error fetching profile:", err);
             return res.status(500).json({ error: "Database error." });
         }
         if (results.length === 0) return res.status(404).json({ error: "User not found." });
-        
+
         res.status(200).json(results[0]);
     });
 };
 
-// STEP 1: Request Email Update (Send OTP)
+/**
+ * Initiates the email update process.
+ * Generates an OTP, saves it, and sends it to the newly requested email address.
+ */
 exports.requestEmailUpdate = (req, res) => {
     const { userId, newEmail } = req.body;
 
     if (!userId || !newEmail) return res.status(400).json({ error: "User ID and new email are required." });
 
-    // --- NEW VALIDATION: Check if the email already exists in the database ---
+    //Check if the email already exists in the database ---
     const checkEmailQuery = 'SELECT email FROM user WHERE email = ?';
-    
+
     db.query(checkEmailQuery, [newEmail], (checkErr, checkResults) => {
         if (checkErr) {
             console.error('Error checking email:', checkErr);
@@ -307,15 +338,14 @@ exports.requestEmailUpdate = (req, res) => {
             return res.status(400).json({ error: "This email address is already in use." });
         }
 
-        // --- Original Logic Proceeds Here ---
-        
+
         // Generate 6-digit OTP and 10-minute expiry
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
         const expiry = new Date();
         expiry.setMinutes(expiry.getMinutes() + 10);
 
         const updateQuery = 'UPDATE user SET OTP = ?, expiryTime = ? WHERE user_id = ?';
-        
+
         db.query(updateQuery, [otp, expiry, userId], (updateErr) => {
             if (updateErr) {
                 console.error('Error saving OTP:', updateErr);
@@ -340,7 +370,9 @@ exports.requestEmailUpdate = (req, res) => {
     });
 };
 
-// STEP 2: Verify OTP and Save New Email
+/**
+ * Verifies the OTP and updates the user's email address in the database.
+ */
 exports.verifyEmailUpdate = (req, res) => {
     const { userId, newEmail, otp } = req.body;
 
@@ -370,7 +402,7 @@ exports.verifyEmailUpdate = (req, res) => {
 
         // If valid, update the email and clear the OTP fields
         const updateEmailQuery = "UPDATE user SET email = ?, OTP = NULL, expiryTime = NULL WHERE user_id = ?";
-        
+
         db.query(updateEmailQuery, [newEmail, userId], (updateErr) => {
             if (updateErr) {
                 console.error("Error saving new email:", updateErr);
@@ -381,7 +413,10 @@ exports.verifyEmailUpdate = (req, res) => {
     });
 };
 
-// Update Password
+/**
+ * Updates a user's password while they are logged in.
+ * Verifies the current password before hashing and saving the new one.
+ */
 exports.updatePassword = (req, res) => {
     const { userId, currentPassword, newPassword } = req.body;
 
@@ -390,7 +425,7 @@ exports.updatePassword = (req, res) => {
     }
 
     const verifyQuery = "SELECT password FROM user WHERE user_id = ?";
-    
+
     db.query(verifyQuery, [userId], (err, results) => {
         if (err) return res.status(500).json({ error: "Database error." });
         if (results.length === 0) return res.status(404).json({ error: "User not found." });
@@ -403,7 +438,7 @@ exports.updatePassword = (req, res) => {
                 console.error('Error comparing passwords:', compareErr);
                 return res.status(500).json({ error: 'Error processing password' });
             }
-            
+
             if (!isMatch) {
                 return res.status(401).json({ error: 'Incorrect current password.' });
             }
@@ -416,7 +451,7 @@ exports.updatePassword = (req, res) => {
                 }
 
                 const updateQuery = "UPDATE user SET password = ? WHERE user_id = ?";
-                
+
                 // 3. Save the newly hashed password to the database
                 db.query(updateQuery, [hashedPassword, userId], (updateErr) => {
                     if (updateErr) return res.status(500).json({ error: "Failed to update password." });

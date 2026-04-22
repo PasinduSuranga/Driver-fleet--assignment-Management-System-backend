@@ -1,5 +1,8 @@
 const db = require('../config/db');
 
+/**
+ * Retrieves all vehicle categories from the database.
+ */
 exports.getCategories = (req, res) => {
     const query = "SELECT * FROM vehicle_category";
     db.query(query, (err, results) => {
@@ -11,7 +14,10 @@ exports.getCategories = (req, res) => {
     });
 };
 
-// --- 3. ADD NEW CATEGORY ---
+/**
+ * Adds a new vehicle category to the database.
+ * Generates a unique category ID automatically.
+ */
 exports.addCategory = (req, res) => {
     const { category_name } = req.body;
 
@@ -19,7 +25,7 @@ exports.addCategory = (req, res) => {
         return res.status(400).json({ message: "Category name is required" });
     }
 
-    // Generate Random Category ID (e.g., CAT-12345)
+    // Generate Random Category ID
     const randomId = Math.floor(10000 + Math.random() * 90000);
     const category_id = `CAT-${randomId}`;
 

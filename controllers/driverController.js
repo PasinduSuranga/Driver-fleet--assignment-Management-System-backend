@@ -5,38 +5,44 @@ const { sendSMS } = require('../services/smsService');
 
 
 function capitalizeFirstLetter(str) {
-    if (!str) return "";
-    
-    return str
-        .toLowerCase()
-        .split(" ")
-        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-        .join(" ");
+  if (!str) return "";
+
+  return str
+    .toLowerCase()
+    .split(" ")
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
 }
 
 
+/**
+ * Retrieves the total count of all drivers in the system.
+ */
 exports.getDriverCount = (req, res) => {
-    const query = 'SELECT COUNT(*) as totalDrivers FROM driver';
+  const query = 'SELECT COUNT(*) as totalDrivers FROM driver';
 
-    db.query(query, (err, results) => {
-        if (err) {
-            console.error('Error fetching driver counts:', err);
-            return res.status(500).json({ error: 'Database error fetching driver count' });
-        }
+  db.query(query, (err, results) => {
+    if (err) {
+      console.error('Error fetching driver counts:', err);
+      return res.status(500).json({ error: 'Database error fetching driver count' });
+    }
 
-        const data = results[0];
+    const data = results[0];
 
-        res.status(200).json({
-            totalDrivers: data.totalDrivers || 0
-        });
+    res.status(200).json({
+      totalDrivers: data.totalDrivers || 0
     });
+  });
 };
 
 
+/**
+ * Retrieves a list of all non-blacklisted drivers along with their license expiry details.
+ */
 exports.getDrivers = async (req, res) => {
-    // Query joins 'driver' and 'driver_license' to get the expiry date
-    // Filters strictly for is_blacklisted = '0'
-    const query = `
+  // Query joins 'driver' and 'driver_license' to get the expiry date
+  // Filters strictly for is_blacklisted = '0'
+  const query = `
         SELECT 
             d.driver_id, 
             d.name, 
@@ -49,54 +55,57 @@ exports.getDrivers = async (req, res) => {
         WHERE d.is_blacklisted = '0'
     `;
 
-    try {
-        const [results] = await db.promise().query(query);
-        res.status(200).json(results);
-    } catch (err) {
-        console.error("Error fetching drivers:", err);
-        res.status(500).json({ message: "Database error fetching drivers" });
-    }
+  try {
+    const [results] = await db.promise().query(query);
+    res.status(200).json(results);
+  } catch (err) {
+    console.error("Error fetching drivers:", err);
+    res.status(500).json({ message: "Database error fetching drivers" });
+  }
 };
 
 
+/**
+ * Adds a driver to the blacklist and sends them an SMS notification.
+ */
 exports.addToBlacklist = async (req, res) => {
-    const { driverId } = req.body;
+  const { driverId } = req.body;
 
-    if (!driverId) {
-        return res.status(400).json({ message: "Driver ID is required" });
+  if (!driverId) {
+    return res.status(400).json({ message: "Driver ID is required" });
+  }
+
+  const connection = db.promise();
+
+  try {
+    // 1. Update Blacklist Status
+    const updateQuery = "UPDATE driver SET is_blacklisted = '1' WHERE driver_id = ?";
+    const [updateResult] = await connection.query(updateQuery, [driverId]);
+
+    if (updateResult.affectedRows === 0) {
+      return res.status(404).json({ message: "Driver not found" });
     }
 
-    const connection = db.promise();
+    // 2. Fetch Driver Details for SMS
+    const driverQuery = "SELECT contact, name FROM driver WHERE driver_id = ?";
+    const [driverRows] = await connection.query(driverQuery, [driverId]);
 
-    try {
-        // 1. Update Blacklist Status
-        const updateQuery = "UPDATE driver SET is_blacklisted = '1' WHERE driver_id = ?";
-        const [updateResult] = await connection.query(updateQuery, [driverId]);
+    if (driverRows.length > 0) {
+      const { contact, name } = driverRows[0];
+      const message = `Dear ${capitalizeFirstLetter(name)}, You have been added to the blacklist. Please contact City Lion Express Tours for more information.`;
 
-        if (updateResult.affectedRows === 0) {
-            return res.status(404).json({ message: "Driver not found" });
-        }
-
-        // 2. Fetch Driver Details for SMS
-        const driverQuery = "SELECT contact, name FROM driver WHERE driver_id = ?";
-        const [driverRows] = await connection.query(driverQuery, [driverId]);
-
-        if (driverRows.length > 0) {
-            const { contact, name } = driverRows[0];
-            const message = `Dear ${capitalizeFirstLetter(name)}, You have been added to the blacklist. Please contact City Lion Express Tours for more information.`;
-
-            // 3. Send SMS
-            await sendSMS(contact, message);
-        } else {
-            console.warn("Driver contact not found for SMS.");
-        }
-
-        res.status(200).json({ message: "Driver has been added to the blacklist successfully." });
-
-    } catch (err) {
-        console.error("Error blacklisting driver:", err);
-        res.status(500).json({ message: "Database error processing request" });
+      // 3. Send SMS
+      await sendSMS(contact, message);
+    } else {
+      console.warn("Driver contact not found for SMS.");
     }
+
+    res.status(200).json({ message: "Driver has been added to the blacklist successfully." });
+
+  } catch (err) {
+    console.error("Error blacklisting driver:", err);
+    res.status(500).json({ message: "Database error processing request" });
+  }
 };
 
 
@@ -109,6 +118,9 @@ const s3Client = new S3Client({
   },
 });
 
+/**
+ * Uploads a file to Cloudflare R2 storage and returns the public URL.
+ */
 const uploadToR2 = async (file) => {
   if (!file) return null;
 
@@ -131,6 +143,10 @@ const uploadToR2 = async (file) => {
 };
 
 
+/**
+ * Registers a new driver, uploads their license photos to R2, 
+ * saves data in the database using a transaction, and sends an SMS notification.
+ */
 exports.addDriver = async (req, res) => {
   const files = req.files || {};
 
@@ -144,7 +160,7 @@ exports.addDriver = async (req, res) => {
 
     const { driverName, contactNumber, licenseNumber, licenseExpiry } = req.body;
 
-    // Required validations (same style as vehicle controller)
+    // Required validations
     if (!driverName) return res.status(400).json({ message: "Driver name is required" });
     if (!contactNumber) return res.status(400).json({ message: "Contact number is required" });
     if (!licenseNumber) return res.status(400).json({ message: "License number is required" });
@@ -202,7 +218,7 @@ exports.addDriver = async (req, res) => {
                 });
               }
 
-              // --- SMS LOGIC (same style as vehicle controller) ---
+              // --- SMS LOGIC---
               const message = `Dear ${capitalizeFirstLetter(driverName)}, You have been successfully registered as a driver with City Lion Express Tours. Thank you!`;
 
               (async () => {
@@ -235,6 +251,9 @@ exports.addDriver = async (req, res) => {
   }
 };
 
+/**
+ * Fetches detailed information for a specific driver including license photos and expiry.
+ */
 exports.getDriverDetails = async (req, res) => {
   const { driverId } = req.query;
 
@@ -274,6 +293,10 @@ exports.getDriverDetails = async (req, res) => {
   }
 };
 
+/**
+ * Updates a driver's details, including optional new license photos.
+ * Uses a transaction to ensure data integrity.
+ */
 exports.updateDriver = async (req, res) => {
   const { driverId, driverName, contactNumber, licenseExpiry } = req.body;
   const files = req.files || {};
@@ -332,7 +355,6 @@ exports.updateDriver = async (req, res) => {
     );
 
     // 5) Update driver_license table (by license number)
-    // If license record exists -> update, else insert a new row (safe fallback)
     const licNo = current.license_number;
 
     const [licRows] = await connection.query(
@@ -365,8 +387,11 @@ exports.updateDriver = async (req, res) => {
   }
 };
 
+/**
+ * Retrieves a list of all blacklisted drivers.
+ */
 exports.getBlacklistedDrivers = (req, res) => {
-    const query = `
+  const query = `
         SELECT 
             d.driver_id, d.name, d.contact, d.is_available, d.license_number, d.is_blacklisted,
             dl.expiry_date
@@ -375,33 +400,35 @@ exports.getBlacklistedDrivers = (req, res) => {
         WHERE d.is_blacklisted = '1'
     `;
 
-    db.query(query, (err, results) => {
-        if (err) {
-            console.error("Error fetching blacklisted drivers:", err);
-            return res.status(500).json({ error: "Database error" });
-        }
-        res.status(200).json(results);
-    });
+  db.query(query, (err, results) => {
+    if (err) {
+      console.error("Error fetching blacklisted drivers:", err);
+      return res.status(500).json({ error: "Database error" });
+    }
+    res.status(200).json(results);
+  });
 };
 
-// Remove a driver from the blacklist
+/**
+ * Removes a driver from the blacklist.
+ */
 exports.removeFromBlacklist = (req, res) => {
-    const { driverId } = req.body;
+  const { driverId } = req.body;
 
-    if (!driverId) {
-        return res.status(400).json({ message: "Driver ID is required" });
+  if (!driverId) {
+    return res.status(400).json({ message: "Driver ID is required" });
+  }
+
+  const query = "UPDATE driver SET is_blacklisted = '0' WHERE driver_id = ?";
+
+  db.query(query, [driverId], (err, result) => {
+    if (err) {
+      console.error("Error removing driver from blacklist:", err);
+      return res.status(500).json({ message: "Database error" });
     }
-
-    const query = "UPDATE driver SET is_blacklisted = '0' WHERE driver_id = ?";
-
-    db.query(query, [driverId], (err, result) => {
-        if (err) {
-            console.error("Error removing driver from blacklist:", err);
-            return res.status(500).json({ message: "Database error" });
-        }
-        if (result.affectedRows === 0) {
-            return res.status(404).json({ message: "Driver not found" });
-        }
-        res.status(200).json({ message: "Driver successfully removed from blacklist." });
-    });
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: "Driver not found" });
+    }
+    res.status(200).json({ message: "Driver successfully removed from blacklist." });
+  });
 };

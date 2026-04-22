@@ -10,7 +10,13 @@ const transporter = nodemailer.createTransport({
     }
 });
 
-// 1. Get Active Users (Pending & Approved)
+/**
+ * Fetches active and pending users.
+ * Retrieves users with is_approved status 0 (Pending) and 1 (Approved).
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object used to send the JSON response
+ */
 exports.getUsers = (req, res) => {
     // We fetch 0 (Pending) and 1 (Approved). 
     // 2 (Declined) and 3 (Blacklisted) are ignored here.
@@ -25,7 +31,13 @@ exports.getUsers = (req, res) => {
     });
 };
 
-// 2. Get Blacklisted Users
+/**
+ * Fetches all blacklisted users.
+ * Retrieves users with is_approved status 3 (Blacklisted).
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object used to send the JSON response
+ */
 exports.getBlacklistedUsers = (req, res) => {
     const query = "SELECT user_id, name, email, role, is_approved FROM user WHERE is_approved = 3";
     
@@ -38,7 +50,13 @@ exports.getBlacklistedUsers = (req, res) => {
     });
 };
 
-// 3. Update User Status (Approve, Decline, Blacklist, Restore)
+/**
+ * Updates a user's approval status and sends an appropriate email notification.
+ * Status codes: 1=Approve, 2=Decline, 3=Blacklist, 0=Restore/Pending
+ * 
+ * @param {Object} req - Express request object containing user_id, email, and status in body
+ * @param {Object} res - Express response object used to send the JSON response
+ */
 exports.updateUserStatus = (req, res) => {
     const { user_id, email, status } = req.body;
     

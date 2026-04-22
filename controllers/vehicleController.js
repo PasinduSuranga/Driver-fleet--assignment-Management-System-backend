@@ -1,12 +1,12 @@
 const db = require('../config/db');
-const {S3Client, PutObjectCommand} = require('@aws-sdk/client-s3');
+const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 const crypto = require('crypto');
 const { sendSMS } = require('../services/smsService');
 
 
 function capitalizeFirstLetter(str) {
     if (!str) return "";
-    
+
     return str
         .toLowerCase()
         .split(" ")
@@ -16,11 +16,17 @@ function capitalizeFirstLetter(str) {
 
 
 function toUpper(str) {
-  if (!str) return "";
-  return str.toUpperCase();
+    if (!str) return "";
+    return str.toUpperCase();
 }
 
 
+/**
+ * Retrieves the total count of vehicles, grouped by 'Own Fleet' and 'Out Source'.
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ */
 exports.getVehicleCount = (req, res) => {
     const query = `
         SELECT 
@@ -35,9 +41,9 @@ exports.getVehicleCount = (req, res) => {
             console.error('Error fetching vehicle counts:', err);
             return res.status(500).json({ error: 'Database error fetching counts' });
         }
-        
+
         const data = results[0];
-        
+
         res.status(200).json({
             totalVehicles: data.totalVehicles || 0,
             ownFleetVehicles: Number(data.ownFleetVehicles) || 0,
@@ -47,6 +53,12 @@ exports.getVehicleCount = (req, res) => {
 };
 
 
+/**
+ * Retrieves a list of all non-blacklisted vehicles along with category and document details.
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ */
 exports.getVehicles = (req, res) => {
     const query = `
         SELECT 
@@ -74,6 +86,12 @@ exports.getVehicles = (req, res) => {
 };
 
 
+/**
+ * Checks if a vehicle registration number already exists in the database.
+ * 
+ * @param {Object} req - Express request object containing regNo in body
+ * @param {Object} res - Express response object
+ */
 exports.checkRegistration = (req, res) => {
     const { regNo } = req.body;
     const query = "SELECT vehicle_number FROM vehicle WHERE vehicle_number = ?";
@@ -97,6 +115,12 @@ const s3Client = new S3Client({
 });
 
 
+/**
+ * Uploads a given file to Cloudflare R2 storage and returns the public URL.
+ * 
+ * @param {Object} file - The file object from multer
+ * @returns {Promise<string|null>} The public URL of the uploaded file or null
+ */
 const uploadToR2 = async (file) => {
     if (!file) return null;
 
@@ -118,9 +142,17 @@ const uploadToR2 = async (file) => {
     }
 };
 
+/**
+ * Registers a new vehicle, uploads its related documents to R2,
+ * links it to an existing owner, and sends a confirmation SMS.
+ * Uses a database transaction for data integrity.
+ * 
+ * @param {Object} req - Express request object containing vehicle details and files
+ * @param {Object} res - Express response object
+ */
 exports.addVehicle = async (req, res) => {
     const files = req.files || {};
-    
+
     try {
         const vehiclePhotoUrl = await uploadToR2(files.vehiclePhoto ? files.vehiclePhoto[0] : null);
         const bookCopyUrl = await uploadToR2(files.bookCopyPhoto ? files.bookCopyPhoto[0] : null);
@@ -152,7 +184,7 @@ exports.addVehicle = async (req, res) => {
                 (documnet_id, book_copy, license, license_expiry_date, insurance, insurance_expiry_date) 
                 VALUES (?, ?, ?, ?, ?, ?)
             `;
-            
+
             db.query(docQuery, [document_id, bookCopyUrl, licenseUrl, licenseExpiry, insuranceUrl, insuranceExpiry], (err, result) => {
                 if (err) {
                     return db.rollback(() => res.status(500).json({ error: "DB Error: Documents" }));
@@ -185,7 +217,7 @@ exports.addVehicle = async (req, res) => {
                             const ownerContact = ownerRows[0].contact;
                             const ownerName = ownerRows[0].name;
                             const message = `Dear ${capitalizeFirstLetter(ownerName)}, Your vehicle ${toUpper(registrationNumber)} has been successfully registered with City Lion Express Tours. Thank you for partnering with us!`;
-                            
+
                             // Send the SMS
                             try {
                                 await sendSMS(ownerContact, message);
@@ -212,12 +244,19 @@ exports.addVehicle = async (req, res) => {
 };
 
 
+/**
+ * Retrieves comprehensive details for a specific vehicle, 
+ * including owner details, category, and document links.
+ * 
+ * @param {Object} req - Express request object containing vehicleNumber in query
+ * @param {Object} res - Express response object
+ */
 exports.getVehicleDetails = async (req, res) => {
-  const { vehicleNumber } = req.query;
-  if (!vehicleNumber) return res.status(400).json({ error: 'Vehicle number is required' });
+    const { vehicleNumber } = req.query;
+    if (!vehicleNumber) return res.status(400).json({ error: 'Vehicle number is required' });
 
-  // --- ADDED v.is_blacklisted TO THE SELECT QUERY ---
-  const query = `
+    // --- ADDED v.is_blacklisted TO THE SELECT QUERY ---
+    const query = `
     SELECT 
       v.vehicle_number, 
       v.vehicle_photo, 
@@ -239,17 +278,24 @@ exports.getVehicleDetails = async (req, res) => {
     WHERE v.vehicle_number = ?
   `;
 
-  try {
-    const [results] = await db.promise().query(query, [vehicleNumber]);
-    if (results.length === 0) return res.status(404).json({ error: 'Vehicle not found' });
-    res.status(200).json(results[0]);
-  } catch (error) {
-    console.error('Error fetching vehicle details:', error);
-    res.status(500).json({ error: 'Internal Server Error' });
-  }
+    try {
+        const [results] = await db.promise().query(query, [vehicleNumber]);
+        if (results.length === 0) return res.status(404).json({ error: 'Vehicle not found' });
+        res.status(200).json(results[0]);
+    } catch (error) {
+        console.error('Error fetching vehicle details:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
 };
 
 
+/**
+ * Updates a vehicle's details and associated documents.
+ * Handles new file uploads to R2 and updates records within a transaction.
+ * 
+ * @param {Object} req - Express request object containing updated details and files
+ * @param {Object} res - Express response object
+ */
 exports.updateVehicle = async (req, res) => {
     const { vehicleNumber, vehicleType, ownerId, ownerContact, licenseExpiry, insuranceExpiry } = req.body;
     const files = req.files || {};
@@ -273,7 +319,7 @@ exports.updateVehicle = async (req, res) => {
             WHERE v.vehicle_number = ?
         `;
         const [rows] = await connection.query(fetchQuery, [vehicleNumber]);
-        
+
         if (rows.length === 0) {
             await connection.rollback();
             return res.status(404).json({ message: "Vehicle not found" });
@@ -288,7 +334,7 @@ exports.updateVehicle = async (req, res) => {
 
         // 3. Prepare Text Data (FIXED: Strict check to avoid null/empty string overwrites)
         const isValid = (val) => val !== undefined && val !== 'undefined' && val !== 'null' && val !== '';
-        
+
         const finalType = isValid(vehicleType) ? vehicleType : current.vehicle_type;
         const finalOwnerId = isValid(ownerId) ? ownerId : current.owner_id;
 
@@ -302,7 +348,7 @@ exports.updateVehicle = async (req, res) => {
         if (current.document_id) {
             const [dateRows] = await connection.query("SELECT license_expiry_date, insurance_expiry_date FROM vehicle_documents WHERE documnet_id = ?", [current.document_id]);
             const currentDates = dateRows[0] || {};
-            
+
             const finalLicExp = isValid(licenseExpiry) ? licenseExpiry : currentDates.license_expiry_date;
             const finalInsExp = isValid(insuranceExpiry) ? insuranceExpiry : currentDates.insurance_expiry_date;
 
@@ -330,6 +376,12 @@ exports.updateVehicle = async (req, res) => {
 };
 
 
+/**
+ * Adds a vehicle to the blacklist and sends a notification SMS to the owner.
+ * 
+ * @param {Object} req - Express request object containing vehicleNumber in body
+ * @param {Object} res - Express response object
+ */
 exports.addToBlacklist = (req, res) => {
     const { vehicleNumber } = req.body;
 
@@ -362,7 +414,7 @@ exports.addToBlacklist = (req, res) => {
             if (!err && rows.length > 0) {
                 const { contact, name } = rows[0];
                 const message = `Dear ${capitalizeFirstLetter(name)}, Your vehicle ${toUpper(vehicleNumber)} has been added to the blacklist. Please contact City Lion Express Tours for more information.`;
-                
+
                 // Send the SMS
                 await sendSMS(contact, message);
             } else if (err) {
@@ -375,6 +427,12 @@ exports.addToBlacklist = (req, res) => {
     });
 };
 
+/**
+ * Retrieves a list of all blacklisted vehicles.
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ */
 exports.getBlacklistedVehicles = (req, res) => {
     const query = `
         SELECT 
@@ -397,6 +455,12 @@ exports.getBlacklistedVehicles = (req, res) => {
     });
 };
 
+/**
+ * Removes a vehicle from the blacklist.
+ * 
+ * @param {Object} req - Express request object containing vehicleNumber in body
+ * @param {Object} res - Express response object
+ */
 exports.removeFromBlacklist = (req, res) => {
     const { vehicleNumber } = req.body;
 
